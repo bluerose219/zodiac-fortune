@@ -1,7 +1,170 @@
 # 별자리 운세
 
-황도 12궁 원판에서 별자리를 골라 오늘·이번 주·이번 달 운세를 보고, 생일로 별자리를 찾거나 두 별자리의 궁합을 확인하는 정적 페이지입니다.
+황도 12궁 원판에서 별자리를 골라 오늘·이번 주·이번 달 운세를 보고, 생일로 별자리를 찾거나 두 별자리의 궁합을 확인하는 웹 서비스입니다.
 
-- 빌드 과정 없이 `index.html` 하나로 동작합니다.
-- 운세는 `별자리:기간:기간키`(한국 시간 기준) 해시로 문구를 골라 조합하므로, 같은 기간에는 항상 같은 결과가 나옵니다.
-- 원판의 금색 점은 근사식으로 계산한 오늘 태양의 황경 위치입니다.
+**배포 주소:** https://bluerose219.github.io/zodiac-fortune/
+
+---
+
+## 강의 내용 정리
+
+Claude Code와 함께 빈 폴더에서 시작해 별자리 운세 서비스를 기획 → 구현 → 테스트 → 데이터 수집 → 디자인 → 배포까지 진행한 과정입니다.
+
+### 1. 기획: 폴더 구조 설계
+
+먼저 만들 서비스의 범위를 정하고, 그에 맞는 폴더 구조를 계획했습니다.
+
+| 결정 사항 | 선택 |
+| --- | --- |
+| 서비스 형태 | 웹앱 (Next.js App Router + TypeScript) |
+| 운세 생성 방식 | 미리 작성한 문구 풀(JSON)을 조합 |
+| 기능 | 오늘/주간/월간 운세, 생일로 별자리 찾기, 별자리 궁합 |
+
+```
+src/
+├─ app/          # 라우트 (페이지, API)
+├─ components/   # 기능별 UI (ui, zodiac, horoscope, compatibility, find)
+├─ lib/          # 순수 로직 (별자리 판별, 운세 조합, 궁합, 시드 난수, 날짜)
+├─ data/         # 별자리 정보, 궁합표, 운세 문구 풀
+├─ types/        # 공용 타입
+└─ constants/    # 상수
+tests/lib/       # 단위 테스트
+```
+
+**핵심 원칙**
+- `lib/`에는 UI와 무관한 순수 함수만 둔다. 나중에 운세를 AI 생성이나 DB로 바꿔도 `fortune.ts`만 교체하면 된다.
+- 콘텐츠(문구)와 코드를 분리한다. 문구는 JSON에만 추가하면 된다.
+
+### 2. 개발 환경 준비
+
+- PC에 Node.js가 없어서 `winget install OpenJS.NodeJS.LTS`로 설치했습니다.
+- `create-next-app`으로 프로젝트를 만들었습니다. 폴더명이 한글이면 npm 패키지 이름으로 쓸 수 없어서, 영문 하위 폴더에 만든 뒤 파일을 위로 옮겼습니다 (패키지 이름: `zodiac-fortune`).
+
+```bash
+npx create-next-app@latest zodiac-fortune --ts --app --src-dir --eslint --tailwind
+```
+
+### 3. 핵심 로직: 같은 날엔 같은 운세
+
+새로고침할 때마다 운세가 바뀌면 신뢰가 떨어지므로, **결정적(deterministic) 난수**를 사용했습니다.
+
+1. `별자리:기간:기간키`로 키를 만든다. 예: `leo:daily:2026-10-12`
+2. 키를 FNV-1a로 해시해 시드로 쓴다.
+3. 시드로 mulberry32 난수 생성기를 만들어 문구와 점수를 고른다.
+
+기간키는 **한국 시간(KST) 기준**으로 계산합니다.
+
+| 기간 | 기간키 예시 |
+| --- | --- |
+| 오늘 | `2026-10-12` |
+| 이번 주 | `2026-W42` (ISO 주차, 월요일 시작) |
+| 이번 달 | `2026-10` |
+
+그 밖의 로직:
+- **생일 → 별자리:** 월×100+일 값으로 비교. 염소자리(12/25~1/19)처럼 해를 넘기는 구간을 따로 처리했습니다.
+- **궁합:** 두 별자리의 원소(불·흙·공기·물) 조합으로 기본 점수를 정하고, 쌍마다 ±5점을 더합니다. `aries-leo`와 `leo-aries`가 같은 결과가 되도록 순서를 정렬합니다.
+
+### 4. Next.js 16에서 주의할 점
+
+Next.js 16은 `cacheComponents`가 기본으로 켜져 있어서, 현재 시각(`new Date()`)처럼 요청마다 달라지는 값을 쓰는 부분은 명시적으로 처리해야 합니다.
+
+```tsx
+async function Fortune({ sign, period }) {
+  await connection();          // 요청 시점에 계산
+  return <FortuneCard fortune={getFortune(sign, period)} />;
+}
+
+// 페이지에서는 <Suspense>로 감싼다
+<Suspense fallback={<p>별을 읽는 중...</p>}>
+  <Fortune sign={sign.id} period={period} />
+</Suspense>
+```
+
+- 동적 라우트(`[sign]`, `[period]`, `[pair]`)에는 `generateStaticParams`를 넣어야 빌드가 통과합니다. 빠뜨리면 빌드 중 *"uncached or runtime data during prerendering"* 오류가 납니다.
+- 새 버전은 학습 데이터와 API가 다를 수 있으므로 `node_modules/next/dist/docs/`의 공식 문서를 먼저 확인했습니다.
+
+### 5. 테스트로 버그 잡기
+
+Vitest로 `lib/` 함수를 테스트했습니다 (16개 테스트).
+
+- 별자리 경계일 (3/20 물고기자리, 3/21 양자리, 12/25 염소자리, 2/29 등)
+- 365일 모두 별자리가 정해지는지
+- 같은 날 아침과 밤의 운세가 같은지, KST 날짜 경계
+- 궁합의 대칭성 (a-b == b-a), 78개 쌍의 점수 범위
+
+> 테스트 덕분에 **궁합 결과의 a/b가 입력 순서를 따라가는 버그**를 발견해 고쳤습니다.
+> `@types/node@20`이 Vitest와 충돌해, 설치한 Node 24에 맞춰 `@types/node@24`로 올렸습니다.
+
+### 6. 정적 페이지로 변환 (Claude 아티팩트)
+
+같은 로직을 HTML 한 장으로 옮겨 claude.ai 아티팩트로 공유했습니다. 이 저장소의 `index.html`이 그 페이지입니다.
+
+- 앱과 같은 해시·난수 알고리즘을 써서, 같은 날 같은 별자리면 앱과 결과가 똑같이 나옵니다 (실제로 결과를 비교해 확인).
+- 히어로에 SVG로 그린 **황도 12궁 원판**을 넣었습니다. 황경 0°(양자리)를 왼쪽에 두고 반시계 방향으로 도는 전통 차트 배치입니다.
+- 원판의 금색 점은 **오늘 태양의 황경**입니다. 근사식으로 계산합니다.
+
+```js
+const n = 율리우스일 - 2451545.0;            // J2000 기준 경과일
+const L = 280.460 + 0.9856474 * n;          // 평균 황경
+const g = 357.528 + 0.9856003 * n;          // 평균 근점이각
+const λ = L + 1.915 * sin(g) + 0.020 * sin(2g);
+```
+
+### 7. Firecrawl로 데이터 크롤링
+
+Firecrawl API로 외부 운세 사이트의 별자리별 소개(성격·직업·행운요소·결혼·건강)를 수집했습니다.
+
+1. **robots.txt 확인:** 크롤링 허용 여부를 먼저 봤습니다.
+2. **폼 구조 분석:** 결과 페이지는 `what=별자리명`을 담은 POST 요청으로만 열립니다. Firecrawl은 POST를 보낼 수 없어서, **브라우저 동작(actions)** 으로 "별자리 클릭 → 결과보기 클릭"을 실행했습니다.
+3. **안정화:** 클릭이 가끔 먹히지 않아 대기 시간을 늘려 최대 3회 재시도하고, 이미 받은 결과는 다시 요청하지 않도록 캐시했습니다.
+4. **정규화:** 사이트마다 다른 표기(`색`/`빛깔`/`샐깔`, `수`/`숫자`)를 영문 키로 통일했습니다.
+
+```js
+actions: [
+  { type: "wait", milliseconds: 1500 },
+  { type: "click", selector: "#stellaBox > div:nth-child(1)" },
+  { type: "click", selector: "#resultgo" },
+  { type: "wait", milliseconds: 3000 },
+]
+```
+
+> **주의**
+> - API 키는 `.env`에 두고 코드에서 읽기만 합니다. `.env`는 git에 올리지 않습니다.
+> - 수집한 글은 원 사이트의 저작물이므로 개인 참고·분석용으로만 쓰고, 이 저장소에는 포함하지 않았습니다.
+
+### 8. 디자인: 배경 이미지 적용
+
+- 2.7MB PNG를 웹용 JPEG(약 360KB)로 압축했습니다.
+- 그림이 화려하므로 어두운 보라색 막을 깔고, 내용 영역은 반투명 패널 + 흐림(`backdrop-filter: blur`)으로 가독성을 확보했습니다.
+- iOS에서는 `background-attachment: fixed`가 동작하지 않아서, `body::before`에 `position: fixed` 레이어를 깔아 배경을 고정했습니다.
+- 밤하늘 그림에 맞춰 다크 테마 하나로 고정하고, 색상을 라벤더와 달빛 금색으로 바꿨습니다.
+
+### 9. GitHub CLI로 배포
+
+`gh` CLI로 저장소를 만들고 GitHub Pages를 켰습니다.
+
+```bash
+git init -b main
+git add -A && git commit -m "Add 별자리 운세 static page"
+gh repo create zodiac-fortune --public --source . --push
+gh api repos/bluerose219/zodiac-fortune/pages -X POST \
+  -f "source[branch]=main" -f "source[path]=/"
+```
+
+- 무료 계정의 GitHub Pages는 **공개 저장소**에서만 동작합니다.
+- Pages는 서버가 없는 정적 호스팅이라 Next.js의 API 라우트나 요청 시점 렌더링은 쓸 수 없습니다. 그래서 브라우저에서 모든 계산을 하는 HTML 페이지를 배포했습니다.
+- 빌드 생략을 위해 `.nojekyll` 파일을 두었습니다.
+
+---
+
+## 파일 구성
+
+| 파일 | 설명 |
+| --- | --- |
+| `index.html` | 페이지 전체 (HTML·CSS·JS) |
+| `bg-zodiac.jpg` | 배경 이미지 |
+| `.nojekyll` | GitHub Pages의 Jekyll 처리 끄기 |
+
+수정 후 `git push`하면 1~2분 안에 사이트에 반영됩니다.
+
+*재미로 보는 운세입니다.*
