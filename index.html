@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="황도 12궁 원판에서 별자리를 골라 오늘·이번 주·이번 달 운세를 보고, 생일로 별자리를 찾거나 두 별자리의 궁합을 확인하세요.">
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+<title>별자리 운세</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 달빛 황도륜 배경 위 반투명 패널. 원판(히어로) 옆에 운세, 아래에 생일 찾기·궁합 두 도구.
+   배경 이미지가 밤하늘이라 다크 한 가지 테마로 고정한다. */
+:root {
+  --sky: #140c33;
+  --veil: rgba(16, 9, 42, 0.62);
+  --surface: rgba(26, 17, 64, 0.66);
+  --field: rgba(12, 7, 34, 0.72);
+  --line: rgba(206, 188, 255, 0.24);
+  --ink: #f3eeff;
+  --muted: #c0b5e6;
+  --gold: #f3d79e;
+  --fire: #ff9f86;
+  --earth: #acd89c;
+  --air: #a3d3ff;
+  --water: #a2adff;
+  --f-display: "Gowun Batang", "Nanum Myeongjo", "AppleMyungjo", serif;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--sky);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.65;
+  position: relative;
+}
+/* iOS에서 background-attachment: fixed 가 동작하지 않아 고정 레이어로 깐다 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, var(--veil), rgba(16, 9, 42, 0.78)),
+    url("bg-zodiac.jpg") center / cover no-repeat,
+    var(--sky);
+}
+.hero, .tool {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.hero { padding: 28px; }
+@media (max-width: 520px) { .hero { padding: 18px; } }
+header h1, .sun-now { text-shadow: 0 1px 12px rgba(10, 4, 30, 0.8); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: flex; flex-direction: column; gap: 40px; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+header h1 { font-family: var(--f-display); font-weight: 700; font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+.sun-now { font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+.sun-now b { color: var(--gold); font-weight: 500; }
+
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+@media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; } }
+
+.wheel-box { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#wheel { width: 100%; max-width: 480px; height: auto; display: block; }
+.wheel-hint { font-size: 13px; color: var(--muted); margin: 0; text-align: center; }
+
+.sector path { stroke: var(--line); stroke-width: 1; transition: fill-opacity .15s; cursor: pointer; }
+.sector[data-el="fire"] path { fill: var(--fire); }
+.sector[data-el="earth"] path { fill: var(--earth); }
+.sector[data-el="air"] path { fill: var(--air); }
+.sector[data-el="water"] path { fill: var(--water); }
+.sector path { fill-opacity: .14; }
+.sector:hover path { fill-opacity: .26; }
+.sector.on path { fill-opacity: .46; }
+.sector:focus { outline: none; }
+.sector:focus-visible path { stroke: var(--gold); stroke-width: 2; }
+.sector text { pointer-events: none; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+.sector .glyph { font-size: 22px; font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols", sans-serif; }
+.sector .nm { font-size: 10.5px; fill: var(--muted); font-family: var(--f-body); }
+.sector.on .nm { fill: var(--ink); font-weight: 600; }
+.ring { fill: none; stroke: var(--line); }
+.tick { stroke: var(--muted); stroke-width: 1; opacity: .55; }
+.tick.major { opacity: .9; }
+.deg { fill: var(--muted); font-family: var(--f-mono); font-size: 8.5px; text-anchor: middle; dominant-baseline: central; }
+.sun-dot { fill: var(--gold); }
+.sun-halo { fill: none; stroke: var(--gold); stroke-opacity: .45; }
+.center-date { fill: var(--muted); font-family: var(--f-mono); font-size: 11px; text-anchor: middle; }
+.center-sign { fill: var(--ink); font-family: var(--f-display); font-size: 22px; font-weight: 700; text-anchor: middle; }
+
+/* 운세 패널 */
+.reading { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.sign-head { display: flex; gap: 16px; align-items: center; }
+.sign-glyph { font-size: 52px; line-height: 1; color: var(--gold); font-family: "Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols", sans-serif; }
+.sign-head h2 { font-family: var(--f-display); font-size: 30px; margin: 0; line-height: 1.2; text-wrap: balance; }
+.sign-meta { font-size: 13px; color: var(--muted); margin: 2px 0 0; }
+.sign-meta span + span::before { content: "·"; margin: 0 6px; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button {
+  font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0; cursor: pointer;
+  padding: 8px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--gold); font-weight: 600; }
+.tabs button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.period-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: 13px; color: var(--muted); }
+.period-line code { font-family: var(--f-mono); color: var(--muted); }
+.overall { font-family: var(--f-display); font-size: 21px; line-height: 1.6; margin: 0; max-width: 32em; text-wrap: pretty; }
+
+.areas { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.area { display: grid; grid-template-columns: 44px minmax(0, 1fr) 34px; gap: 4px 12px; align-items: center; }
+.area .lbl { font-size: 13px; font-weight: 600; letter-spacing: .04em; }
+.bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; transition: width .4s ease; }
+.area .num { font-family: var(--f-mono); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.area p { grid-column: 2 / 4; margin: 0; font-size: 14px; color: var(--muted); }
+
+.lucky { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.lucky div { padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lucky div + div { border-left: 1px solid var(--line); }
+.lucky dt { font-size: 11px; color: var(--muted); letter-spacing: .08em; }
+.lucky dd { margin: 0; font-weight: 600; }
+.lucky dd.mono { font-family: var(--f-mono); }
+
+/* 도구 */
+.tools { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+@media (max-width: 760px) { .tools { grid-template-columns: minmax(0, 1fr); } }
+.tool { padding: 22px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tool h3 { font-family: var(--f-display); font-size: 20px; margin: 0; }
+.tool .sub { font-size: 13px; color: var(--muted); margin: -10px 0 0; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); min-width: 0; }
+input, select {
+  font: inherit; font-size: 15px; color: var(--ink); background: var(--field);
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; width: 100%; min-width: 0;
+}
+input:focus-visible, select:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: end; }
+.pair .x { padding-bottom: 10px; color: var(--muted); font-family: var(--f-mono); }
+
+.result { border-top: 1px dashed var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.result .big { font-family: var(--f-display); font-size: 22px; font-weight: 700; margin: 0; }
+.result .big .g { color: var(--gold); margin-right: 6px; }
+.result p { margin: 0; }
+.result .muted { color: var(--muted); font-size: 14px; }
+.linkish { font: inherit; font-size: 14px; color: var(--gold); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; align-self: flex-start; }
+.linkish:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.score { display: flex; align-items: baseline; gap: 10px; }
+.score .n { font-family: var(--f-mono); font-size: 40px; font-weight: 500; color: var(--gold); line-height: 1; font-variant-numeric: tabular-nums; }
+.score .of { font-family: var(--f-mono); color: var(--muted); font-size: 13px; }
+.els { font-size: 13px; color: var(--muted); }
+
+footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; text-shadow: 0 1px 8px rgba(10, 4, 30, 0.9); }
+select option { background: var(--sky); color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>별자리 운세</h1>
+    <div class="sun-now" id="sunNow"></div>
+  </header>
+
+  <section class="hero">
+    <div class="wheel-box">
+      <svg id="wheel" viewBox="0 0 400 400" role="group" aria-label="황도 12궁 원판. 별자리를 눌러 운세를 확인하세요."></svg>
+      <p class="wheel-hint">원판에서 별자리를 누르세요. 금색 점은 오늘 태양의 위치입니다.</p>
+    </div>
+
+    <div class="reading" aria-live="polite">
+      <div class="sign-head">
+        <div class="sign-glyph" id="rGlyph"></div>
+        <div>
+          <h2 id="rName"></h2>
+          <p class="sign-meta" id="rMeta"></p>
+        </div>
+      </div>
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" id="tab-daily" data-p="daily" aria-selected="true">오늘</button>
+        <button role="tab" id="tab-weekly" data-p="weekly" aria-selected="false">이번 주</button>
+        <button role="tab" id="tab-monthly" data-p="monthly" aria-selected="false">이번 달</button>
+      </div>
+      <div class="period-line"><span id="rRange"></span><code id="rKey"></code></div>
+      <p class="overall" id="rOverall"></p>
+      <ul class="areas" id="rAreas"></ul>
+      <dl class="lucky" id="rLucky"></dl>
+    </div>
+  </section>
+
+  <section class="tools">
+    <div class="tool">
+      <h3>생일로 별자리 찾기</h3>
+      <p class="sub">태어난 날짜를 고르면 별자리를 알려드려요.</p>
+      <label class="field" for="birth">생년월일
+        <input type="date" id="birth" value="2000-08-15" min="1900-01-01" max="2100-12-31">
+      </label>
+      <div class="result" id="findResult"></div>
+    </div>
+
+    <div class="tool">
+      <h3>별자리 궁합</h3>
+      <p class="sub">두 별자리의 원소 조합으로 궁합을 봅니다.</p>
+      <div class="pair">
+        <label class="field" for="pa">나<select id="pa"></select></label>
+        <span class="x">×</span>
+        <label class="field" for="pb">상대<select id="pb"></select></label>
+      </div>
+      <div class="result" id="compatResult"></div>
+    </div>
+  </section>
+
+  <footer>재미로 보는 운세입니다. 날짜는 한국 시간 기준이며, 같은 기간에는 같은 운세가 나옵니다.</footer>
+</div>
+
+<script>
+const SIGNS = [
+  { id: "aries", name: "양자리", symbol: "♈", start: [3, 21], end: [4, 19], element: "fire", ruler: "화성", traits: ["열정적", "도전적", "솔직함"] },
+  { id: "taurus", name: "황소자리", symbol: "♉", start: [4, 20], end: [5, 20], element: "earth", ruler: "금성", traits: ["끈기", "현실적", "감각적"] },
+  { id: "gemini", name: "쌍둥이자리", symbol: "♊", start: [5, 21], end: [6, 21], element: "air", ruler: "수성", traits: ["호기심", "재치", "사교적"] },
+  { id: "cancer", name: "게자리", symbol: "♋", start: [6, 22], end: [7, 22], element: "water", ruler: "달", traits: ["다정함", "보호본능", "섬세함"] },
+  { id: "leo", name: "사자자리", symbol: "♌", start: [7, 23], end: [8, 22], element: "fire", ruler: "태양", traits: ["자신감", "관대함", "카리스마"] },
+  { id: "virgo", name: "처녀자리", symbol: "♍", start: [8, 23], end: [9, 23], element: "earth", ruler: "수성", traits: ["꼼꼼함", "분석적", "성실함"] },
+  { id: "libra", name: "천칭자리", symbol: "♎", start: [9, 24], end: [10, 22], element: "air", ruler: "금성", traits: ["균형감", "우아함", "협조적"] },
+  { id: "scorpio", name: "전갈자리", symbol: "♏", start: [10, 23], end: [11, 22], element: "water", ruler: "명왕성", traits: ["통찰력", "집중력", "신비로움"] },
+  { id: "sagittarius", name: "사수자리", symbol: "♐", start: [11, 23], end: [12, 24], element: "fire", ruler: "목성", traits: ["낙천적", "자유로움", "모험심"] },
+  { id: "capricorn", name: "염소자리", symbol: "♑", start: [12, 25], end: [1, 19], element: "earth", ruler: "토성", traits: ["책임감", "인내심", "야망"] },
+  { id: "aquarius", name: "물병자리", symbol: "♒", start: [1, 20], end: [2, 18], element: "air", ruler: "천왕성", traits: ["독창적", "독립적", "인도주의"] },
+  { id: "pisces", name: "물고기자리", symbol: "♓", start: [2, 19], end: [3, 20], element: "water", ruler: "해왕성", traits: ["상상력", "공감능력", "직관"] }
+];
+const ELEMENT_LABELS = { fire: "불", earth: "흙", air: "공기", water: "물" };
+
+const COMPAT = {
+  "air-air": { score: 80, summary: "대화가 끊이지 않는 지적인 조합이에요. 서로의 자유를 존중해 주세요." },
+  "air-earth": { score: 55, summary: "생각과 현실의 속도가 달라요. 서로의 방식을 배우면 단단해집니다." },
+  "air-fire": { score: 90, summary: "바람이 불을 키우듯 서로에게 활력을 주는 최고의 조합이에요." },
+  "air-water": { score: 50, summary: "이성과 감성의 차이가 커요. 감정 표현을 조금 더 해 보세요." },
+  "earth-earth": { score: 80, summary: "안정감과 신뢰가 바탕이 되는 든든한 관계예요." },
+  "earth-fire": { score: 50, summary: "추진력과 신중함이 부딪힐 수 있지만, 균형을 찾으면 좋은 팀이 됩니다." },
+  "earth-water": { score: 90, summary: "물이 땅을 적시듯 서로를 채워 주는 따뜻한 조합이에요." },
+  "fire-fire": { score: 85, summary: "열정이 넘치는 뜨거운 관계! 주도권 다툼만 조심하세요." },
+  "fire-water": { score: 45, summary: "정반대의 성향이라 끌리지만 충돌도 잦아요. 배려가 핵심입니다." },
+  "water-water": { score: 85, summary: "말하지 않아도 마음이 통하는 깊은 공감의 관계예요." }
+};
+
+const PHRASES = {
+  daily: {
+    overall: ["작은 행운이 곳곳에 숨어 있는 날이에요. 주변을 잘 살펴보세요.", "서두르기보다 한 박자 쉬어 가면 더 좋은 결과가 따라옵니다.", "새로운 시도를 하기에 좋은 기운이 감돌아요.", "평소 미뤄 두었던 일을 정리하기 좋은 하루입니다."],
+    love: ["가벼운 안부 인사가 관계를 한층 가깝게 만들어 줘요.", "상대의 이야기에 귀 기울이면 마음이 통합니다.", "솔직한 표현이 오해를 풀어 줄 거예요."],
+    money: ["충동구매는 잠시 미루는 것이 좋아요.", "예상치 못한 작은 수입이 생길 수 있어요.", "지출 내역을 점검하면 새는 돈을 막을 수 있습니다."],
+    health: ["가벼운 산책이 컨디션 회복에 도움이 돼요.", "물을 충분히 마시고 일찍 잠자리에 드세요.", "어깨와 목의 긴장을 풀어 주는 스트레칭을 추천해요."]
+  },
+  weekly: {
+    overall: ["주 초반의 노력이 주말에 결실을 맺는 한 주예요.", "사람들과의 교류에서 좋은 기회를 얻게 됩니다.", "계획을 세우고 차근차근 실행하면 순조롭게 흘러가요."],
+    love: ["함께하는 시간을 늘리면 관계가 더 깊어져요.", "새로운 인연이 다가올 수 있는 한 주입니다.", "작은 배려가 큰 감동으로 돌아와요."],
+    money: ["주중에 재정 계획을 점검해 보세요.", "투자보다는 저축에 집중하는 것이 유리해요.", "생각지 못한 지출에 대비해 여유를 두세요."],
+    health: ["규칙적인 생활 리듬을 지키는 것이 중요해요.", "주말에는 충분한 휴식으로 에너지를 채우세요.", "가벼운 운동을 꾸준히 이어가 보세요."]
+  },
+  monthly: {
+    overall: ["변화의 바람이 부는 달이에요. 유연하게 받아들이면 성장합니다.", "그동안의 노력이 인정받는 시기가 찾아와요.", "새로운 목표를 세우고 시작하기에 좋은 달입니다."],
+    love: ["관계에서 한 단계 나아갈 수 있는 기회가 생겨요.", "오래된 인연과의 재회가 기분 좋은 소식을 가져와요.", "자신을 먼저 사랑할 때 좋은 사랑이 찾아옵니다."],
+    money: ["장기적인 재테크 계획을 세우기에 적절한 시기예요.", "수입과 지출의 균형이 잘 맞는 달입니다.", "큰 지출은 신중하게 결정하세요."],
+    health: ["건강검진이나 생활 습관 점검을 추천해요.", "스트레스 관리에 신경 쓰면 활력이 넘칩니다.", "식습관을 조금만 바꿔도 몸이 가벼워져요."]
+  }
+};
+const LUCKY = {
+  colors: ["빨강", "주황", "노랑", "초록", "하늘색", "남색", "보라", "흰색", "검정", "분홍"],
+  items: ["손수건", "머그컵", "이어폰", "향수", "책", "반지", "우산", "다이어리", "꽃", "운동화"]
+};
+
+/* ---------- 앱의 src/lib 과 같은 로직 ---------- */
+function hashString(input) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) { hash ^= input.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
+  return hash >>> 0;
+}
+function mulberry32(seed) {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function createRandom(key) {
+  const next = mulberry32(hashString(key));
+  return { int: (min, max) => min + Math.floor(next() * (max - min + 1)), pick: (items) => items[Math.floor(next() * items.length)] };
+}
+function toKstParts(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  return { year: get("year"), month: get("month"), day: get("day") };
+}
+const pad = (n) => String(n).padStart(2, "0");
+function isoWeek(year, month, day) {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  const weekday = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - weekday);
+  const weekYear = d.getUTCFullYear();
+  const week = Math.ceil(((d.getTime() - Date.UTC(weekYear, 0, 1)) / 86400000 + 1) / 7);
+  return { weekYear, week };
+}
+function getPeriodKey(period, date) {
+  const { year, month, day } = toKstParts(date);
+  if (period === "daily") return `${year}-${pad(month)}-${pad(day)}`;
+  if (period === "weekly") { const w = isoWeek(year, month, day); return `${w.weekYear}-W${pad(w.week)}`; }
+  return `${year}-${pad(month)}`;
+}
+function getFortune(sign, period, date) {
+  const key = getPeriodKey(period, date);
+  const r = createRandom(`${sign}:${period}:${key}`);
+  const pool = PHRASES[period];
+  return {
+    key,
+    overall: r.pick(pool.overall), love: r.pick(pool.love), money: r.pick(pool.money), health: r.pick(pool.health),
+    scores: { love: r.int(40, 100), money: r.int(40, 100), health: r.int(40, 100) },
+    lucky: { color: r.pick(LUCKY.colors), number: r.int(1, 45), item: r.pick(LUCKY.items) }
+  };
+}
+function getSign(id) { return SIGNS.find((s) => s.id === id); }
+function findSignByBirthday(month, day) {
+  const value = month * 100 + day;
+  return SIGNS.find(({ start, end }) => {
+    const s = start[0] * 100 + start[1], e = end[0] * 100 + end[1];
+    return s <= e ? value >= s && value <= e : value >= s || value <= e;
+  });
+}
+function toPairSlug(a, b) {
+  const order = SIGNS.map((s) => s.id);
+  return [a, b].sort((x, y) => order.indexOf(x) - order.indexOf(y)).join("-");
+}
+function getCompatibility(a, b) {
+  const pair = toPairSlug(a, b);
+  const [first, second] = pair.split("-");
+  const sa = getSign(first), sb = getSign(second);
+  const base = COMPAT[[sa.element, sb.element].sort().join("-")];
+  const offset = createRandom(pair).int(-5, 5);
+  return { pair, a: first, b: second, score: Math.max(0, Math.min(100, base.score + offset)), summary: base.summary };
+}
+
+/* ---------- 태양의 황경 (근사식, 오차 ±0.01° 수준) ---------- */
+function sunLongitude(date) {
+  const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const L = 280.460 + 0.9856474 * n;
+  const g = (357.528 + 0.9856003 * n) * Math.PI / 180;
+  return (((L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) % 360) + 360) % 360;
+}
+
+/* ---------- 원판 ---------- */
+const NOW = new Date();
+const CX = 200, CY = 200;
+// 황경 0°(양자리 시작)를 왼쪽에 두고 반시계 방향으로 진행하는 전통 차트 배치
+function pt(r, lon) {
+  const t = (180 + lon) * Math.PI / 180;
+  return [CX + r * Math.cos(t), CY - r * Math.sin(t)];
+}
+const f = (n) => n.toFixed(2);
+function sectorPath(r1, r2, l1, l2) {
+  const [a, b] = [pt(r2, l1), pt(r2, l2)], [c, d] = [pt(r1, l2), pt(r1, l1)];
+  return `M${f(a[0])} ${f(a[1])} A${r2} ${r2} 0 0 0 ${f(b[0])} ${f(b[1])} L${f(c[0])} ${f(c[1])} A${r1} ${r1} 0 0 1 ${f(d[0])} ${f(d[1])} Z`;
+}
+function drawWheel() {
+  const svg = document.getElementById("wheel");
+  const R_OUT = 176, R_IN = 104;
+  let html = "";
+  SIGNS.forEach((s, i) => {
+    const l1 = i * 30, mid = l1 + 15;
+    const [gx, gy] = pt(150, mid), [nx, ny] = pt(124, mid);
+    html += `<g class="sector" data-id="${s.id}" data-el="${s.element}" tabindex="0" role="button" aria-label="${s.name} 운세 보기">
+      <path d="${sectorPath(R_IN, R_OUT, l1, l1 + 30)}"></path>
+      <text class="glyph" x="${f(gx)}" y="${f(gy)}">${s.symbol}︎</text>
+      <text class="nm" x="${f(nx)}" y="${f(ny)}">${s.name}</text>
+    </g>`;
+  });
+  html += `<circle class="ring" cx="${CX}" cy="${CY}" r="190"></circle>`;
+  for (let d = 0; d < 360; d += 5) {
+    const major = d % 30 === 0, len = major ? 14 : d % 10 === 0 ? 8 : 4;
+    const [x1, y1] = pt(R_OUT, d), [x2, y2] = pt(R_OUT + len, d);
+    html += `<line class="tick${major ? " major" : ""}" x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}"></line>`;
+  }
+  [0, 90, 180, 270].forEach((d) => {
+    const [x, y] = pt(R_IN - 10, d);
+    html += `<text class="deg" x="${f(x)}" y="${f(y)}">${d}°</text>`;
+  });
+  const lon = sunLongitude(NOW);
+  const [sx, sy] = pt(R_OUT + 7, lon);
+  html += `<circle class="sun-halo" cx="${f(sx)}" cy="${f(sy)}" r="9"></circle><circle class="sun-dot" cx="${f(sx)}" cy="${f(sy)}" r="5"><title>오늘 태양 황경 ${lon.toFixed(1)}°</title></circle>`;
+  const { year, month, day } = toKstParts(NOW);
+  const sunSign = SIGNS[Math.floor(lon / 30)];
+  html += `<text class="center-date" x="${CX}" y="${CY - 14}">${year}.${pad(month)}.${pad(day)} 태양</text>
+           <text class="center-sign" x="${CX}" y="${CY + 14}">${sunSign.name}</text>`;
+  svg.innerHTML = html;
+
+  document.getElementById("sunNow").innerHTML =
+    `오늘 태양 <b>${sunSign.symbol}︎ ${sunSign.name} ${Math.floor(lon % 30)}°</b> · 황경 ${lon.toFixed(1)}°`;
+
+  svg.querySelectorAll(".sector").forEach((g) => {
+    g.addEventListener("click", () => select(g.dataset.id));
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(g.dataset.id); } });
+  });
+}
+
+/* ---------- 운세 패널 ---------- */
+const state = { sign: "libra", period: "daily" };
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+function rangeLabel(period) {
+  const { year, month, day } = toKstParts(NOW);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (period === "daily") return `${month}월 ${day}일 (${WEEKDAYS[d.getUTCDay()]})`;
+  if (period === "monthly") return `${year}년 ${month}월`;
+  const wd = d.getUTCDay() || 7;
+  const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - (wd - 1));
+  const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+  return `${mon.getUTCMonth() + 1}월 ${mon.getUTCDate()}일 ~ ${sun.getUTCMonth() + 1}월 ${sun.getUTCDate()}일`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function render() {
+  const s = getSign(state.sign);
+  const fo = getFortune(s.id, state.period, NOW);
+  document.getElementById("rGlyph").textContent = s.symbol + "︎";
+  document.getElementById("rName").textContent = s.name;
+  document.getElementById("rMeta").innerHTML =
+    `<span>${s.start[0]}.${s.start[1]} ~ ${s.end[0]}.${s.end[1]}</span><span>${ELEMENT_LABELS[s.element]}의 별자리</span><span>지배성 ${s.ruler}</span><span>${s.traits.join(", ")}</span>`;
+  document.getElementById("rRange").textContent = rangeLabel(state.period);
+  document.getElementById("rKey").textContent = fo.key;
+  document.getElementById("rOverall").textContent = fo.overall;
+  const areas = [["애정", fo.scores.love, fo.love], ["금전", fo.scores.money, fo.money], ["건강", fo.scores.health, fo.health]];
+  document.getElementById("rAreas").innerHTML = areas.map(([l, v, t]) =>
+    `<li class="area"><span class="lbl">${l}</span><span class="bar" role="img" aria-label="${l} ${v}점"><i style="width:${v}%"></i></span><span class="num">${v}</span><p>${esc(t)}</p></li>`).join("");
+  document.getElementById("rLucky").innerHTML =
+    `<div><dt>행운의 색</dt><dd>${fo.lucky.color}</dd></div><div><dt>행운의 숫자</dt><dd class="mono">${fo.lucky.number}</dd></div><div><dt>행운의 물건</dt><dd>${fo.lucky.item}</dd></div>`;
+
+  document.querySelectorAll(".sector").forEach((g) => g.classList.toggle("on", g.dataset.id === s.id));
+  document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.p === state.period)));
+}
+function select(id) {
+  if (!getSign(id)) return;
+  state.sign = id;
+  try { localStorage.setItem("zodiac-sign", id); } catch (e) {}
+  try { history.replaceState(null, "", "#" + id); } catch (e) {}
+  render();
+}
+document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { state.period = b.dataset.p; render(); }));
+
+/* ---------- 생일 찾기 ---------- */
+function renderFind() {
+  const out = document.getElementById("findResult");
+  const v = document.getElementById("birth").value;
+  const [, m, d] = v.split("-").map(Number);
+  const s = v ? findSignByBirthday(m, d) : null;
+  if (!s) { out.innerHTML = `<p class="muted">날짜를 선택하면 여기에 별자리가 표시됩니다.</p>`; return; }
+  out.innerHTML = `<p class="big"><span class="g">${s.symbol}︎</span>${s.name}</p>
+    <p class="muted">${m}월 ${d}일생 · ${s.start[0]}.${s.start[1]} ~ ${s.end[0]}.${s.end[1]} · ${ELEMENT_LABELS[s.element]}의 별자리</p>
+    <button class="linkish" type="button" id="goSign">${s.name} 운세 보기</button>`;
+  document.getElementById("goSign").addEventListener("click", () => {
+    select(s.id);
+    document.querySelector(".hero").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
+}
+document.getElementById("birth").addEventListener("input", renderFind);
+
+/* ---------- 궁합 ---------- */
+function fillSelect(el, val) {
+  el.innerHTML = SIGNS.map((s) => `<option value="${s.id}">${s.symbol}︎ ${s.name}</option>`).join("");
+  el.value = val;
+  el.addEventListener("change", renderCompat);
+}
+function renderCompat() {
+  const a = document.getElementById("pa").value, b = document.getElementById("pb").value;
+  const c = getCompatibility(a, b);
+  const sa = getSign(c.a), sb = getSign(c.b);
+  document.getElementById("compatResult").innerHTML =
+    `<div class="score"><span class="n">${c.score}</span><span class="of">/ 100</span></div>
+     <p class="els">${sa.name}(${ELEMENT_LABELS[sa.element]}) × ${sb.name}(${ELEMENT_LABELS[sb.element]})</p>
+     <p>${esc(c.summary)}</p>`;
+}
+
+/* ---------- 시작 ---------- */
+(function start() {
+  const fromHash = location.hash.slice(1);
+  let saved = null;
+  try { saved = localStorage.getItem("zodiac-sign"); } catch (e) {}
+  const sunSign = SIGNS[Math.floor(sunLongitude(NOW) / 30)].id;
+  state.sign = getSign(fromHash) ? fromHash : getSign(saved) ? saved : sunSign;
+  drawWheel();
+  render();
+  renderFind();
+  fillSelect(document.getElementById("pa"), "aries");
+  fillSelect(document.getElementById("pb"), "leo");
+  renderCompat();
+})();
+</script>
+</body>
+</html>
